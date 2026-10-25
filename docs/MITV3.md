@@ -20,9 +20,17 @@ gradle -Pmitv3=true :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :bo
 
 完整开机还需安装 `boot-helper/build/outputs/apk/debug/boot-helper-debug.apk`。这是同仓库的“归藏启动桥”，包名 `io.github.op7418.guizangtv.mitv3.boot`，没有系统权限、网络请求或后台服务，只转发给主应用的一次性启动入口。它只声明 INFO，不占用用户的普通桌面应用入口。主应用仍可正常从应用列表打开。
 
-MiTV3 默认入口：Zidoo Z9X / HDMI 1、Nintendo Switch / HDMI 2、Emby、网易 Filmly、小米投屏、小米原桌面。已有首页顺序仍优先。两个 HDMI 图标为本分支绘制的通用媒体盒与手柄图形，不是品牌标志。
+MiTV3 默认入口：Zidoo Z9X / HDMI 1、Nintendo Switch / HDMI 2、Emby、网易爆米花（原 Filmly，包名不变）、小米投屏、小米原桌面。已有首页顺序仍优先。两个 HDMI 图标为本分支绘制的通用媒体盒与手柄图形，不是品牌标志。
 
 Java 集合默认方法与 `java.util.function` 使用 core library desugaring；系统权限检查兼容 API 22；不使用 API 23 的滚动监听接口。原矢量图中省略前导零的小数已经等值规范化，避免 Android 5.x 的路径解析问题。兼容版默认固定壁纸，可手动开启轮播；Codex 实验暂不开放，不迁移或修改配对。
+
+## 天气与城市的 HTTPS 兼容
+
+API 22 实机能访问 IPWhois，但 Open-Meteo 城市搜索与天气域名报 `Trust anchor for certification path not found`。旧逻辑又仅在天气成功后保存城市，导致识别成功也显示“尚未识别”。v9 起独立保存自动城市，提供“立即重试”，并区分安全连接、DNS 和超时错误。
+
+`app/src/main/res/raw/isrg_root_x1.crt` 为 Let's Encrypt 官方公开根证书 [ISRG Root X1](https://letsencrypt.org/certs/isrgrootx1.pem)，不是私钥。DER SHA-256：`96bcec06264976f37460779acf28c5a7cfe8a3c0aae11a8ffcee05c0bddf08c6`；有效期至 2035-06-04。
+
+仅 MiTV3 构建的 API 22、HTTPS 默认端口下的 `api.open-meteo.com` 和 `geocoding-api.open-meteo.com` 使用该根验证证书链；仍使用系统 TLS 实现和默认主机名校验，不接受无效证书、不跟随重定向、不修改系统信任库。IPWhois、其他网络功能及标准版仍使用系统默认证书配置。未来服务更换根或证书过期时应更新应用，不得以关闭校验规避。
 
 ## HDMI 与原生入口
 
@@ -43,9 +51,9 @@ Java 集合默认方法与 `java.util.function` 使用 core library desugaring�
 
 ### 为什么默认桌面设置无法解决
 
-“主屏幕”设置页中，上下聚焦整行并不能确认，需要点击左侧单选圆圈。经用户要求配置后，系统确实将归藏写入了首选记录；诊断 API `getHomeActivities()` 也返回归藏。但同一时刻 `resolveActivity(MAIN + HOME)` 和实际 Home 按键仍返回小米桌面。两个候选的 priority 均为 0，不能把问题简单归咎于可调的优先级。
+“主屏幕”设置页中，遥控器只能聚焦整行，确定键无法操作左侧单选圆圈。调试时用 ADB 触控点击圆圈，系统确实将归藏写入了首选记录；诊断 API `getHomeActivities()` 也返回归藏。但同一时刻 `resolveActivity(MAIN + HOME)` 和实际 Home 按键仍返回小米桌面。两个候选的 priority 均为 0，不能把问题简单归咎于可调的优先级。不能把 ADB 的触控操作写成用户能用遥控器完成的步骤。
 
-因此此固件上不要反复尝试普通默认桌面选择，也不要将“记录已保存”当成 Home 已生效。
+因此此固件上不要反复尝试普通默认桌面选择，也不要将“记录已保存”当成 Home 已生效。v9 起本机 Home 页不再提供“打开系统默认桌面设置”这个无效入口，保留明确的兼容开关；标准版仍保留原生设置入口。
 
 ### 兼容开关
 
@@ -61,7 +69,9 @@ Java 集合默认方法与 `java.util.function` 使用 core library desugaring�
 
 ## 完整开机与恢复
 
-同页的“开启开机进入归藏”独立保存。仅监听 `BOOT_COMPLETED` 的首轮测试没有达到目标：电视后来显示 Emby，归藏处于 stopped 状态，不能认为广播路径已通过。用户当时只是退出 Emby，并未关闭开机启动开关；本次没有修改 Emby 的设置或组件。
+入口恢复为 **设置 → 电视与启动 → 开机自动进入**，与“遥控器 Home 键”并列，不再把开机开关放在 Home 页。沿用原来的 `legacy-home/boot` 偏好，不迁移或重置开关，只整理菜单；旧电视仍使用已验证的启动桥，不改用新款固件的启动算法。
+
+仅监听 `BOOT_COMPLETED` 的首轮测试没有达到目标：电视后来显示 Emby，归藏处于 stopped 状态，不能认为广播路径已通过。用户当时只是退出 Emby，并未关闭开机启动开关；本次没有修改 Emby 的设置或组件。
 
 随后从本机已安装的小米桌面 3.49.1601 中核对到：BootActivity.finish 和主桌面启动路径优先读取 `Settings.System.start_3rd_app`，为空时回退到其私有缓存的自动启动应用；AppUtil.openAutoApp 使用 `getLaunchIntentForPackage()`。因此使用本机已存在的原生入口，而不是从新款小米照抄配置。
 
@@ -77,7 +87,7 @@ adb -s TV_IP:PORT shell settings put system start_3rd_app io.github.op7418.guiza
 adb -s TV_IP:PORT shell settings put system boot_auto_play 0
 ```
 
-然后在归藏设置中开启“开机进入归藏”和所需的 Home 兼容返回。启动桥调用主应用的 LegacyBootGateActivity；后者检查机型、用户开关、本次内核 boot_id 与开机时间。仅在完整开机十分钟内尝试一次，发送前持久化标记，重复或迟到的系统调用直接结束，不抢回正在使用的 HDMI。boot_id 只保存在应用私有偏好中，不输出到公共诊断。
+然后在归藏的“开机自动进入”页开启对应开关，在“遥控器 Home 键”页按需开启 Home 兼容返回。启动桥调用主应用的 LegacyBootGateActivity；后者检查机型、用户开关、本次内核 boot_id 与开机时间。仅在完整开机十分钟内尝试一次，发送前持久化标记，重复或迟到的系统调用直接结束，不抢回正在使用的 HDMI。boot_id 只保存在应用私有偏好中，不输出到公共诊断。
 
 已配置原生桥时，BOOT_COMPLETED 只负责恢复 Home 服务，不与原生入口争抢首次打开；未配置时保留受同一去重策略限制的广播备用路径。日常运行不依赖 ADB、电脑或网络服务。
 
@@ -91,9 +101,9 @@ adb -s TV_IP:PORT shell settings put system boot_auto_play 0
 
 恢复步骤：
 
-1. 关闭“Home 兼容返回”和“开机进入归藏”；Home 服务立即停止。
+1. 分别在“遥控器 Home 键”和“开机自动进入”页关闭对应开关；Home 服务立即停止。
 2. 按原记录恢复 `start_3rd_app` 与开机信号源设置；原本不存在的键可删除，原本为空字符串则恢复空字符串，不把文本 null 写为包名。小米可能缓存启动桥目标，因此先关闭归藏的开机开关，并保留两个 APK 直到重启确认。若明确要恢复开机打开 Emby，可将原生目标设为 `com.mb.android`，无需清除小米桌面数据。
-3. 如需清理首选记录，在原生“主屏幕”设置点小米桌面的左侧圆圈，或清除归藏的默认打开方式；不要清除任何应用数据。
+3. 恢复 Home 无需操作系统圆圈。如另需清理首选记录，可借助鼠标或 ADB 触控在原生“主屏幕”设置点小米桌面的圆圈，或清除归藏的默认打开方式；遥控器本身不能完成该点击，不要清除任何应用数据。
 4. 验证原有行为后，可卸载独立试用包。小米桌面和系统包一直保留，不需要批量 `pm enable`。
 
 未请求 Root、刷机、修改键盘布局、停用广告/更新组件、开启 AI 或改动 CEC。调试结束后可关闭网络 ADB；Home 服务和开机进入均在电视本机运行。

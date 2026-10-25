@@ -58,12 +58,13 @@ final class HomeSettings {
     private void back(){
         a.wallpapers.cancelPreview();a.wallpapers.cancelSelection();
         if(page.equals("overview")){close();return;}
-        go(page.equals("city")?"weather":page.equals("wallpaper")||page.equals("rotation")?"background":page.startsWith("item:")||page.equals("add")?"home":"overview");
+        go(parent());
     }
+    private String parent(){return page.equals("city")?"weather":page.equals("wallpaper")||page.equals("rotation")?"background":page.startsWith("item:")||page.equals("add")?"home":page.equals("homekey")||page.equals("boot")?"tv":"overview";}
     private void go(String next){cityRequest++;searching=false;a.wallpapers.cancelPreview();a.wallpapers.cancelSelection();page=next;render();}
     private String title(){
         switch(page){case "overview":return "设置";case "background":return "背景";case "wallpaper":return "壁纸";case "rotation":return "轮播";
-            case "weather":return "时间与天气";case "city":return "选择城市";case "layout":return "布局";case "type":return "字体";case "focus":return "选中样式";case "home":return "首页内容";case "add":return "首页内容 / 添加";case "tv":return "电视与启动";case "homekey":return "遥控器 Home 键";case "experiments":return "实验性功能";
+            case "weather":return "时间与天气";case "city":return "选择城市";case "layout":return "布局";case "type":return "字体";case "focus":return "选中样式";case "home":return "首页内容";case "add":return "首页内容 / 添加";case "tv":return "电视与启动";case "homekey":return "遥控器 Home 键";case "boot":return "开机自动进入";case "experiments":return "实验性功能";
             default:return "首页内容 / "+a.items.name(page.substring(5));}
     }
     private void render(){
@@ -72,7 +73,8 @@ final class HomeSettings {
         LinearLayout panel=new LinearLayout(a);panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(a.dp(70),a.dp(overview?42:24),a.dp(70),a.dp(30));
         if(!overview){
-            TextView back=label("‹  "+(page.equals("wallpaper")||page.equals("rotation")?"背景":"设置"),14);
+            String parent=parent();
+            TextView back=label("‹  "+(parent.equals("background")?"背景":parent.equals("tv")?"电视与启动":parent.equals("weather")?"时间与天气":parent.equals("home")?"首页内容":"设置"),14);
             back.setTextColor(0xBBFFFFFF);back.setFocusable(true);back.setOnClickListener(v->back());
             back.setPadding(a.dp(8),0,a.dp(10),0);
             back.setOnFocusChangeListener((v,f)->decorate(v,f));
@@ -132,6 +134,7 @@ final class HomeSettings {
                 option("显示天气",a.weather.enabled(),()->{if(a.weather.enabled(true)){a.refreshHome();render();}else failed();});
                 option("自动识别城市",a.weather.automatic(),()->{if(a.weather.autoCity()){a.refreshHome();render();}else failed();});
                 entry("手动选择城市",a.weather.city(),()->go("city"));
+                if(a.weather.enabled())entry("立即重试","重新获取当前城市的天气",()->{a.weather.retry();weatherChanged();});
                 note("天气显示在时间右侧，每 30 分钟更新。自动城市根据网络出口识别；使用代理时可能不准确，可手动纠正。");
                 note("数据：Open-Meteo · CC BY 4.0\n城市：IPWhois · 不申请精确定位");break;
             case "city":
@@ -151,22 +154,29 @@ final class HomeSettings {
                 note("当前支持文字对话；语音输入取决于系统输入法。尚未接入日程、米家或电脑控制。");
                 note("关闭后隐藏入口并停止电视端连接，保留配对。已发送的回答可能继续在电脑完成；完全停用请在电脑停止连接服务。");break;
             case "tv":
-                entry("遥控器 Home 键","系统默认桌面与恢复",()->go("homekey"));
-                if(LegacyHome.supported())entry("开机进入归藏",LegacyHome.boot(a)?"已开启":"已关闭",()->go("homekey"));
+                entry("遥控器 Home 键",LegacyHome.supported()?"兼容返回与恢复":"系统默认桌面与恢复",()->go("homekey"));
+                if(LegacyHome.supported())entry("开机自动进入",LegacyHome.boot(a)?"已开启":"已关闭",()->go("boot"));
                 else entry("开机自动进入",BootStart.supported()?(BootStart.enabled(a)?"已开启":"已关闭"):"当前机型未适配",()->BootStart.show(a));
                 entry("电视系统设置","网络、声音、画面等",a::systemSettings);entry("小米原桌面","打开原来的电视首页",a::stockHome);break;
+            case "boot":
+                option("开启开机自动进入",LegacyHome.boot(a),()->legacyHome("boot",true));
+                option("关闭开机自动进入",!LegacyHome.boot(a),()->legacyHome("boot",false));
+                note("仅在完整开机后进入归藏一次，不处理待机唤醒。此开关与 Home 返回独立，沿用已保存的开机设置。");
+                note("系统启动桥："+(LegacyHome.nativeConfigured(a)?"已配置":"未配置，需电脑安装启动桥并设置开机目标")+"。同次开机的重复调用不会抢占 HDMI。");
+                note("请关闭电视的“开机直接播放信号源”。关闭此处开关后，缓存的启动入口也不再打开归藏；若要恢复原启动目标，请按项目文档恢复系统设置。");
+                entry("电视系统设置","查看电视自身的启动与信号源选项",a::systemSettings);break;
             case "homekey":
                 note(HomeNavigation.status(a));
                 if(LegacyHome.supported()){
                     heading("MiTV3 兼容模式");
                     option("开启 Home 兼容返回",LegacyHome.home(a),()->legacyHome("home",true));
                     option("关闭 Home 兼容返回",!LegacyHome.home(a),()->legacyHome("home",false));
-                    option("开启开机进入归藏",LegacyHome.boot(a),()->legacyHome("boot",true));
-                    option("关闭开机进入归藏",!LegacyHome.boot(a),()->legacyHome("boot",false));
                     note("此固件会绕过已选的默认桌面。兼容服务仅接收 Home 系统通知，不读屏、不用无障碍；可能短暂经过小米桌面。关闭后立即停止服务。");
-                    note("开机仅在完整启动后尝试一次，不处理待机唤醒。请关闭电视的“开机直接播放信号源”，避免与 HDMI 自动播放冲突。");
-                    note("系统开机桥："+(LegacyHome.nativeConfigured(a)?"已配置":"未配置，需电脑安装启动桥并设置开机目标")+"。同次开机的重复调用不会抢占 HDMI；关闭开机开关后，缓存的入口也不再打开首页。");
+                    note("系统默认桌面页的遥控器焦点只能选整行，无法确认左侧圆圈；即使借助触控保存也不会改变本机 Home 行为。因此这里不再打开该无效设置页，使用上方兼容开关即可。");
                     note(LegacyHome.status(a));
+                    entry("刷新状态","查看本机 Home 兼容返回状态",this::render);
+                    entry("打开小米原桌面","保留原生设置、投屏和信号源",a::stockHome);
+                    note("恢复 Home 原行为只需关闭上方兼容返回。开机选项位于“电视与启动 → 开机自动进入”，不在此页修改。");break;
                 }
                 entry("打开系统默认桌面设置","由你选择，不自动修改",()->{
                     android.content.Intent intent=HomeNavigation.settingsIntent(a);
@@ -175,7 +185,7 @@ final class HomeSettings {
                 });
                 entry("刷新解析状态","不模拟按键、不改变默认值",this::render);
                 entry("打开小米原桌面","保留原生设置、投屏和信号源",a::stockHome);
-                note(LegacyHome.supported()?"原生设置需要点击左侧单选圆圈，仅聚焦整行不能确认。但此固件即使保存默认值仍返回小米，不必反复尝试。":"若短按 Home 出现选择器，先选择归藏电视并选“仅此一次”试用；确认后再选择“始终”。系统解析结果不能替代实体遥控器测试。");
+                note("若短按 Home 出现选择器，先选择归藏电视并选“仅此一次”试用；确认后再选择“始终”。系统解析结果不能替代实体遥控器测试。");
                 note("不启用无障碍，不禁用小米桌面。恢复原行为时先关闭 Home 兼容返回和开机进入，再恢复电视自己的启动设置。");
                 note("恢复：在系统默认桌面设置选回小米桌面，再验证实体 Home。若系统没有该设置，在系统应用信息中清除归藏的默认打开方式（不要清除应用数据），或卸载此试用版；小米桌面仍保留。");break;
             default:

@@ -6,6 +6,12 @@ final class WeatherPolicy {
     static boolean fresh(long at,long now,long age){return at>0&&now>=at&&now-at<age;}
     static boolean coordinates(double lat,double lon){return Double.isFinite(lat)&&Double.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;}
     static boolean valid(double temperature,int code){return Double.isFinite(temperature)&&temperature>=-100&&temperature<=70&&!description(code).isEmpty();}
+    static String failure(Exception error){
+        if(error instanceof javax.net.ssl.SSLException||error instanceof java.security.GeneralSecurityException)return "安全连接失败，请检查电视日期或更新应用";
+        if(error instanceof java.net.SocketTimeoutException)return "连接超时，请检查网络后重试";
+        if(error instanceof java.net.UnknownHostException)return "无法解析服务地址，请检查网络后重试";
+        return "暂时无法获取数据，请重试或手动选择城市";
+    }
     static String description(int code){
         switch(code){
             case 0:return "晴";case 1:return "晴间多云";case 2:return "多云";case 3:return "阴";

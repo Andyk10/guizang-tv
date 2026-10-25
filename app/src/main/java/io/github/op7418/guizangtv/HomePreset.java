@@ -14,7 +14,7 @@ final class HomePreset {
 
     static String[] labels(boolean legacy) {
         return legacy
-                ? new String[]{"Zidoo Z9X", "Nintendo Switch", "Emby", "网易 Filmly", "小米投屏", "小米原桌面"}
+                ? new String[]{"Zidoo Z9X", "Nintendo Switch", "Emby", "网易爆米花", "小米投屏", "小米原桌面"}
                 : new String[]{"PlayStation 5", "Apple TV", "哔哩哔哩", "小米投屏", "相册", "小米原桌面"};
     }
 }

@@ -19,6 +19,11 @@ public class HomePresetTest {
         assertEquals("PlayStation 5", HomePreset.labels(false)[0]);
         assertEquals("Apple TV", HomePreset.labels(false)[1]);
     }
+    @Test public void filmlyRenameKeepsTheSameAppIdentity() {
+        int index = Arrays.asList(HomePreset.ids(true)).indexOf("com.netease.filmlytv");
+        assertTrue(index >= 0);
+        assertEquals("网易爆米花", HomePreset.labels(true)[index]);
+    }
     @Test public void bothPresetsHaveDistinctLabelledEntries() {
         for (boolean legacy : new boolean[]{false, true}) {
             String[] ids = HomePreset.ids(legacy);

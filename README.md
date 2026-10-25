@@ -4,7 +4,7 @@
 
 一个给国内小米电视做的简洁桌面：大字、壁纸、常用应用，以及直接进入游戏机和 Apple TV 的入口。
 
-**本地 MiTV3 适配分支：** 新增 `-Pmitv3=true` 独立兼容构建，面向 MiTV3 / inception / Android 5.1.1 / 固件 7.6.9.1426。默认首页为 Zidoo Z9X（HDMI 1）、Nintendo Switch（HDMI 2）、Emby、网易 Filmly、投屏和小米原桌面；已有偏好优先，不覆盖标准版。提供默认关闭的本机 Home 兼容返回和完整开机进入开关，无需禁用小米桌面或开启无障碍。构建、Home 键处理与验证边界见 [MiTV3 说明](docs/MITV3.md)。不传该参数时仍构建原标准版。
+**本地 MiTV3 适配分支：** 新增 `-Pmitv3=true` 独立兼容构建，面向 MiTV3 / inception / Android 5.1.1 / 固件 7.6.9.1426。默认首页为 Zidoo Z9X（HDMI 1）、Nintendo Switch（HDMI 2）、Emby、网易爆米花、投屏和小米原桌面；已有偏好优先，不覆盖标准版。提供默认关闭的本机 Home 兼容返回和完整开机进入开关，无需禁用小米桌面或开启无障碍。构建、Home 键处理与验证边界见 [MiTV3 说明](docs/MITV3.md)。不传该参数时仍构建原标准版。
 
 ![归藏电视界面示意](docs/preview.svg)
 

@@ -21,7 +21,9 @@ final class HomeWeather {
         Reading(String city,double temperature,int code,boolean day,long observed){this.city=city;this.temperature=temperature;this.code=code;this.day=day;this.observed=observed;}
     }
     interface Cities {void done(List<City> cities,String error);}
+    private final Context context;
     private final SharedPreferences prefs;
+    private javax.net.ssl.SSLSocketFactory weatherTls;
     private final Handler ui=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final Runnable changed;
@@ -31,6 +33,7 @@ final class HomeWeather {
     private Reading reading;
     private String status="尚未获取天气";
     HomeWeather(Context context,Runnable changed){
+        this.context=context.getApplicationContext();
         prefs=context.getSharedPreferences("home-weather",0);this.changed=changed;
         try{JSONObject o=new JSONObject(prefs.getString("cache","{}"));reading=parse(o);}catch(Exception ignored){}
     }
@@ -46,11 +49,12 @@ final class HomeWeather {
     void active(boolean value){active=value;ui.removeCallbacks(poll);if(active){refresh();ui.postDelayed(poll,60_000);}}
     private final Runnable poll=new Runnable(){public void run(){if(!active||destroyed)return;changed.run();refresh();ui.postDelayed(this,60_000);}};
     void refresh(){refresh(false);}
+    void retry(){if(!busy){attempted=0;refresh(true);}changed.run();}
     private void refresh(boolean explicit){
         long now=System.currentTimeMillis();
         if(destroyed||(!active&&!explicit)||!enabled()||busy||WeatherPolicy.fresh(attempted,now,WeatherPolicy.REFRESH))return;
         long fetched=prefs.getLong("fetched",0);
-        if(current()!=null&&WeatherPolicy.fresh(fetched,now,WeatherPolicy.REFRESH))return;
+        if(!explicit&&current()!=null&&WeatherPolicy.fresh(fetched,now,WeatherPolicy.REFRESH))return;
         attempted=now;busy=true;final int request=generation;final boolean auto=automatic();
         final String name=city(), lat=prefs.getString(auto?"auto_lat":"manual_lat",""),lon=prefs.getString(auto?"auto_lon":"manual_lon","");
         final boolean locate=auto&&!WeatherPolicy.fresh(prefs.getLong("auto_at",0),now,WeatherPolicy.LOCATION_AGE);
@@ -65,6 +69,11 @@ final class HomeWeather {
                 }else resolved=new City(name,"",Double.parseDouble(lat),Double.parseDouble(lon));
                 final City city=resolved;
                 if(!WeatherPolicy.coordinates(city.lat,city.lon)||city.name.trim().isEmpty())throw new IOException("城市信息不可用");
+                // City lookup can succeed even if the forecast fails. Keep the two states separate.
+                if(auto)ui.post(()->{if(destroyed||request!=generation)return;
+                    SharedPreferences.Editor e=prefs.edit().putString("auto_name",city.name).putString("auto_lat",String.valueOf(city.lat)).putString("auto_lon",String.valueOf(city.lon));
+                    if(locate||lat.isEmpty()||lon.isEmpty())e.putLong("auto_at",System.currentTimeMillis());
+                    e.apply();changed.run();});
                 JSONObject data=get("https://api.open-meteo.com/v1/forecast?latitude="+city.lat+"&longitude="+city.lon+"&current=temperature_2m,weather_code,is_day&timeformat=unixtime");
                 JSONObject weather=data.getJSONObject("current");
                 if(!"°C".equals(data.getJSONObject("current_units").getString("temperature_2m")))throw new IOException("温度单位不可用");
@@ -73,10 +82,9 @@ final class HomeWeather {
                 if(!WeatherPolicy.fresh(result.observed,System.currentTimeMillis(),WeatherPolicy.MAX_AGE))throw new IOException("天气数据已过期");
                 ui.post(()->{if(destroyed||request!=generation)return;busy=false;reading=result;status="已更新 · "+WeatherPolicy.description(result.code);
                     SharedPreferences.Editor e=prefs.edit().putString("cache",cache.toString()).putLong("fetched",System.currentTimeMillis());
-                    if(auto)e.putString("auto_name",city.name).putString("auto_lat",String.valueOf(city.lat)).putString("auto_lon",String.valueOf(city.lon));
-                    if(auto&&(locate||lat.isEmpty()||lon.isEmpty()))e.putLong("auto_at",System.currentTimeMillis());
                     e.apply();changed.run();});
-            }catch(Exception failure){ui.post(()->{if(destroyed||request!=generation)return;busy=false;status="暂时无法更新，可检查网络或手动选择城市";changed.run();});}
+            }catch(Exception failure){final String message=WeatherPolicy.failure(failure);
+                ui.post(()->{if(destroyed||request!=generation)return;busy=false;status=message;changed.run();});}
         });
     }
     void search(String query,Cities callback){
@@ -87,11 +95,11 @@ final class HomeWeather {
                 JSONArray data=get("https://geocoding-api.open-meteo.com/v1/search?name="+URLEncoder.encode(value,"UTF-8")+"&count=8&language=zh&format=json").optJSONArray("results");
                 if(data!=null)for(int i=0;i<data.length();i++){JSONObject c=data.getJSONObject(i);double lat=c.getDouble("latitude"),lon=c.getDouble("longitude");if(WeatherPolicy.coordinates(lat,lon))results.add(new City(c.getString("name"),c.optString("admin1")+" · "+c.optString("country"),lat,lon));}
                 if(results.isEmpty())error="没有找到城市，试试完整名称或拼音";
-            }catch(Exception failure){error="搜索暂不可用，请稍后重试";}
+            }catch(Exception failure){error="城市搜索失败："+WeatherPolicy.failure(failure);}
             final String message=error;ui.post(()->{if(!destroyed)callback.done(results,message);});
         });
     }
-    private static City localized(City city,String country){
+    private City localized(City city,String country){
         // A translated name is optional. Never replace the IP coordinates with a namesake city.
         try{
             JSONArray rows=get("https://geocoding-api.open-meteo.com/v1/search?name="+URLEncoder.encode(city.name,"UTF-8")+"&count=8&language=zh&countryCode="+URLEncoder.encode(country,"UTF-8")).optJSONArray("results");
@@ -109,10 +117,17 @@ final class HomeWeather {
         if(!WeatherPolicy.valid(t,code)||city.trim().isEmpty())throw new JSONException("Invalid weather");
         return new Reading(city,t,code,o.getBoolean("day"),o.getLong("observed"));
     }
-    private static JSONObject get(String url)throws Exception{
-        HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();
+    private JSONObject get(String url)throws Exception{
+        URL target=new URL(url);
+        if(!"https".equals(target.getProtocol()))throw new IOException("HTTPS required");
+        HttpURLConnection c=(HttpURLConnection)target.openConnection();
         c.setConnectTimeout(8000);c.setReadTimeout(8000);c.setInstanceFollowRedirects(false);c.setRequestProperty("User-Agent","GuiZangTV/WeatherTrial");
-        try{if(c.getResponseCode()!=200)throw new IOException("HTTP "+c.getResponseCode());
+        try{
+            if(WeatherTls.needsRoot(BuildConfig.LEGACY_MITV3,Build.VERSION.SDK_INT,target)){
+                if(weatherTls==null)try(InputStream root=context.getResources().openRawResource(R.raw.isrg_root_x1)){weatherTls=WeatherTls.factory(root);}
+                ((javax.net.ssl.HttpsURLConnection)c).setSSLSocketFactory(weatherTls);
+            }
+            if(c.getResponseCode()!=200)throw new IOException("HTTP "+c.getResponseCode());
             try(InputStream in=c.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
                 byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))!=-1){if(out.size()+n>262144)throw new IOException("Response too large");out.write(buffer,0,n);}
                 return new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
