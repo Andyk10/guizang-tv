@@ -18,12 +18,14 @@ public final class BootStart {
         return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
     static boolean enabled(Context c) { return prefs(c).getBoolean("enabled", false); }
+    static boolean supported() { return !BuildConfig.LEGACY_MITV3 && XiaomiControls.enabled(); }
     private static int bootCount(Context c) {
+        if (android.os.Build.VERSION.SDK_INT < 24) return -1;
         return Settings.Global.getInt(c.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
     }
     static void enter(Activity a) {
         int boot = bootCount(a);
-        String reason = BootStartPolicy.skipReason(XiaomiControls.enabled(), enabled(a), boot, prefs(a).getInt("attempted", -1),
+        String reason = BootStartPolicy.skipReason(supported(), enabled(a), boot, prefs(a).getInt("attempted", -1),
                 SystemClock.elapsedRealtime());
         if (reason != null) { Log.i("GuiZangBoot", reason); return; }
         if (!prefs(a).edit().putInt("attempted", boot).putString("status", "系统已调用启动入口，等待界面确认").commit()) return;
@@ -59,7 +61,7 @@ public final class BootStart {
                 .setNegativeButton("返回", null).show();
     }
     static void show(Activity a) {
-        if (!XiaomiControls.enabled()) {
+        if (!supported()) {
             new AlertDialog.Builder(a).setTitle("开机自动进入（实验）")
                     .setMessage("目前仅适配 MiTV-MTSU0。其他机型请先使用普通应用入口。")
                     .setNegativeButton("返回", null).show();

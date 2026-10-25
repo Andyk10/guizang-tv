@@ -51,7 +51,7 @@ final class FrameWallpapers {
     FrameWallpapers(Activity activity, ImageView photo, ImageView transition) {
         this.activity = activity; this.photo = photo; this.transition = transition;
         prefs = activity.getSharedPreferences("frame-wallpapers", Activity.MODE_PRIVATE);
-        rotating = prefs.getBoolean("rotating", true);
+        rotating = prefs.getBoolean("rotating", !BuildConfig.LEGACY_MITV3);
         minutes = WallpaperCycle.minutes(prefs.getInt("minutes", WallpaperCycle.DEFAULT_MINUTES));
         try (InputStream stream = openCatalog()) {
             java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();

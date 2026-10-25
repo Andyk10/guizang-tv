@@ -65,7 +65,13 @@ public final class FrameHomeActivity extends Activity implements HomeSurface.Act
     void updateRotation(){if(weather!=null)weather.active(resumed&&!settings.showing()&&(assistant==null||!assistant.showing())&&(library==null||!library.isShowing()));if(resumed&&appearance.get("background")==0&&!settings.showing()&&(assistant==null||!assistant.showing())&&(library==null||!library.isShowing()))wallpapers.resume();else wallpapers.pause();}
     @Override public void selected(int index){selected=index;getSharedPreferences("frame-home",0).edit().putInt("selected",index).apply();}
     @Override public void open(String id){
-        if(id.startsWith("hdmi:")){if(!XiaomiControls.openHdmi(this,Integer.parseInt(id.substring(5))))message("暂时无法切换信号源");return;}
+        if(id.startsWith("hdmi:")){
+            if(!XiaomiControls.openHdmi(this,Integer.parseInt(id.substring(5)))){
+                if(XiaomiControls.showInputs(this))message("直达不可用，请在信号源菜单选择 HDMI "+id.substring(5));
+                else message("暂时无法切换信号源，请使用电视原生信号源菜单");
+            }
+            return;
+        }
         if("com.mitv.tvhome".equals(id)){stockHome();return;}
         Intent intent=getPackageManager().getLeanbackLaunchIntentForPackage(id);
         if(intent==null)intent=getPackageManager().getLaunchIntentForPackage(id);
@@ -87,14 +93,23 @@ public final class FrameHomeActivity extends Activity implements HomeSurface.Act
         library=new AlertDialog.Builder(this).setTitle("全部应用").setItems(labels,(d,i)->open(ids.get(i))).setNegativeButton("返回",null).create();
         library.setOnDismissListener(d->{surface.controls.get(0).requestFocus();updateRotation();});library.show();updateRotation();
     }
-    @Override protected void onResume(){super.onResume();resumed=true;assistant.active(true);BootStart.confirm(this);handler.removeCallbacks(tick);tick.run();updateRotation();}
-    @Override protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);}
+    @Override protected void onResume(){super.onResume();resumed=true;assistant.active(true);BootStart.confirm(this);LegacyHome.sync(this);handler.removeCallbacks(tick);tick.run();updateRotation();}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused&&resumed)LegacyHome.confirm(this);}
+    @Override protected void onNewIntent(Intent i){
+        super.onNewIntent(i);setIntent(i);
+        if(i.hasCategory(Intent.CATEGORY_HOME)){
+            assistant.close();settings.close();if(library!=null)library.dismiss();surface.focusApp();
+            surface.post(()->{if(resumed&&hasWindowFocus())LegacyHome.confirm(this);});
+        }
+    }
     @Override protected void onPause(){resumed=false;assistant.active(false);weather.active(false);handler.removeCallbacks(tick);wallpapers.pause();if(library!=null)library.dismiss();super.onPause();}
     @Override protected void onDestroy(){assistant.destroy();settings.close();weather.destroy();wallpapers.destroy();handler.removeCallbacksAndMessages(null);super.onDestroy();}
     @Override public void onBackPressed(){if(surface.controls.contains(getCurrentFocus()))surface.focusApp();else if(XiaomiControls.enabled())stockHome();else super.onBackPressed();}
     @Override public void dump(String prefix,java.io.FileDescriptor fd,java.io.PrintWriter out,String[] args){
         super.dump(prefix,fd,out,args);wallpapers.dump(out);BootStart.dump(this,out);weather.dump(out);
         out.println("HomeAppearance: "+appearance.prefs.getAll()+" items="+items.order+" settings="+settings.page());
+        out.println("HomeNavigation: "+HomeNavigation.status(this));
+        if(LegacyHome.supported())out.println("LegacyHome: home="+LegacyHome.home(this)+" boot="+LegacyHome.boot(this)+" native="+LegacyHome.nativeConfigured(this)+" source="+LegacyHome.prefs(this).getString("boot_source","none")+" status="+LegacyHome.status(this));
     }
     void message(String value){Toast.makeText(this,value,Toast.LENGTH_LONG).show();}
     int dp(float v){return Math.round(v*getResources().getDisplayMetrics().density);}

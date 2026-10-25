@@ -1,15 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" android:maxSdkVersion="22" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <queries>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LEANBACK_LAUNCHER" /></intent>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>
+        <intent><action android:name="android.settings.HOME_SETTINGS" /></intent>
         <package android:name="com.xiaomi.mitv.settings" />
         <package android:name="com.xiaomi.mitv.tvplayer" />
         <package android:name="com.mitv.tvhome" />
     </queries>
-    <application android:label="@string/app_name" android:icon="@drawable/ic_launcher"
+    <application android:label="${appLabel}" android:icon="@drawable/ic_launcher"
         android:banner="@drawable/banner" android:theme="@style/Theme.GuiZangTV"
         android:allowBackup="false" android:supportsRtl="true">
         <activity android:name=".FrameHomeActivity" android:exported="true"
@@ -28,9 +31,18 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <service android:name=".LegacyHomeService" android:enabled="${legacyHomeEnabled}"
+            android:exported="false" />
+        <activity android:name=".LegacyBootGateActivity" android:enabled="${legacyHomeEnabled}"
+            android:exported="true" android:theme="@android:style/Theme.NoDisplay"
+            android:noHistory="true" android:excludeFromRecents="true" android:taskAffinity="" />
+        <receiver android:name=".LegacyBootReceiver" android:enabled="${legacyHomeEnabled}"
+            android:exported="false">
+            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
+        </receiver>
         <!-- Xiaomi's package-based startup hook resolves INFO before LAUNCHER.
              Ordinary TV app-list entries still open FrameHomeActivity directly. -->
-        <activity android:name=".BootGateActivity" android:exported="true"
+        <activity android:name=".BootGateActivity" android:exported="true" android:enabled="${bootGateEnabled}"
             android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay">
             <intent-filter>

@@ -63,7 +63,7 @@ final class HomeSettings {
     private void go(String next){cityRequest++;searching=false;a.wallpapers.cancelPreview();a.wallpapers.cancelSelection();page=next;render();}
     private String title(){
         switch(page){case "overview":return "设置";case "background":return "背景";case "wallpaper":return "壁纸";case "rotation":return "轮播";
-            case "weather":return "时间与天气";case "city":return "选择城市";case "layout":return "布局";case "type":return "字体";case "focus":return "选中样式";case "home":return "首页内容";case "add":return "首页内容 / 添加";case "tv":return "电视与启动";case "experiments":return "实验性功能";
+            case "weather":return "时间与天气";case "city":return "选择城市";case "layout":return "布局";case "type":return "字体";case "focus":return "选中样式";case "home":return "首页内容";case "add":return "首页内容 / 添加";case "tv":return "电视与启动";case "homekey":return "遥控器 Home 键";case "experiments":return "实验性功能";
             default:return "首页内容 / "+a.items.name(page.substring(5));}
     }
     private void render(){
@@ -144,13 +144,40 @@ final class HomeSettings {
                 if(!cityError.isEmpty())note(cityError);else note("确认省份和国家后选择。返回不会更改当前城市。");break;
             case "experiments":
                 heading("Codex 对话");
+                if(BuildConfig.LEGACY_MITV3){note("MiTV3 兼容版暂不提供 Codex 实验。先保证 Android 5.1 的桌面、信号源和遥控器稳定；不会开启连接服务或迁移配对。");break;}
                 option("关闭",!HomeAssistant.enabled(a),()->experiment(false));
                 option("开启",HomeAssistant.enabled(a),()->experiment(true));
                 note("开启后，首页显示 Codex 入口。需要同一网络内的电脑运行连接服务，并登录 Codex；使用相应账号额度。");
                 note("当前支持文字对话；语音输入取决于系统输入法。尚未接入日程、米家或电脑控制。");
                 note("关闭后隐藏入口并停止电视端连接，保留配对。已发送的回答可能继续在电脑完成；完全停用请在电脑停止连接服务。");break;
             case "tv":
-                entry("开机自动进入",BootStart.enabled(a)?"已开启":"已关闭",()->BootStart.show(a));entry("电视系统设置","网络、声音、画面等",a::systemSettings);entry("小米原桌面","打开原来的电视首页",a::stockHome);break;
+                entry("遥控器 Home 键","系统默认桌面与恢复",()->go("homekey"));
+                if(LegacyHome.supported())entry("开机进入归藏",LegacyHome.boot(a)?"已开启":"已关闭",()->go("homekey"));
+                else entry("开机自动进入",BootStart.supported()?(BootStart.enabled(a)?"已开启":"已关闭"):"当前机型未适配",()->BootStart.show(a));
+                entry("电视系统设置","网络、声音、画面等",a::systemSettings);entry("小米原桌面","打开原来的电视首页",a::stockHome);break;
+            case "homekey":
+                note(HomeNavigation.status(a));
+                if(LegacyHome.supported()){
+                    heading("MiTV3 兼容模式");
+                    option("开启 Home 兼容返回",LegacyHome.home(a),()->legacyHome("home",true));
+                    option("关闭 Home 兼容返回",!LegacyHome.home(a),()->legacyHome("home",false));
+                    option("开启开机进入归藏",LegacyHome.boot(a),()->legacyHome("boot",true));
+                    option("关闭开机进入归藏",!LegacyHome.boot(a),()->legacyHome("boot",false));
+                    note("此固件会绕过已选的默认桌面。兼容服务仅接收 Home 系统通知，不读屏、不用无障碍；可能短暂经过小米桌面。关闭后立即停止服务。");
+                    note("开机仅在完整启动后尝试一次，不处理待机唤醒。请关闭电视的“开机直接播放信号源”，避免与 HDMI 自动播放冲突。");
+                    note("系统开机桥："+(LegacyHome.nativeConfigured(a)?"已配置":"未配置，需电脑安装启动桥并设置开机目标")+"。同次开机的重复调用不会抢占 HDMI；关闭开机开关后，缓存的入口也不再打开首页。");
+                    note(LegacyHome.status(a));
+                }
+                entry("打开系统默认桌面设置","由你选择，不自动修改",()->{
+                    android.content.Intent intent=HomeNavigation.settingsIntent(a);
+                    if(intent==null){a.message("固件未提供标准桌面设置。可短按实体 Home 键，检查是否出现桌面选择器。");return;}
+                    try{a.startActivity(intent);}catch(RuntimeException unavailable){a.message("系统拒绝打开桌面设置，现有设置未改变");}
+                });
+                entry("刷新解析状态","不模拟按键、不改变默认值",this::render);
+                entry("打开小米原桌面","保留原生设置、投屏和信号源",a::stockHome);
+                note(LegacyHome.supported()?"原生设置需要点击左侧单选圆圈，仅聚焦整行不能确认。但此固件即使保存默认值仍返回小米，不必反复尝试。":"若短按 Home 出现选择器，先选择归藏电视并选“仅此一次”试用；确认后再选择“始终”。系统解析结果不能替代实体遥控器测试。");
+                note("不启用无障碍，不禁用小米桌面。恢复原行为时先关闭 Home 兼容返回和开机进入，再恢复电视自己的启动设置。");
+                note("恢复：在系统默认桌面设置选回小米桌面，再验证实体 Home。若系统没有该设置，在系统应用信息中清除归藏的默认打开方式（不要清除应用数据），或卸载此试用版；小米桌面仍保留。");break;
             default:
                 String id=page.substring(5);int pos=a.items.order.indexOf(id);
                 if(pos>0)entry("上移","与上一项交换位置",()->move(id,-1));if(pos>=0&&pos<a.items.order.size()-1)entry("下移","与下一项交换位置",()->move(id,1));
@@ -165,6 +192,7 @@ final class HomeSettings {
         if(!a.assistant.enabled(enabled)){failed();return;}
         a.refreshHome();render();
     }
+    private void legacyHome(String key,boolean enabled){if(!LegacyHome.set(a,key,enabled)){failed();return;}render();}
     private void searchCities(){
         if(searching)return;cityQuery=cityInput.getText().toString().trim();
         ((android.view.inputmethod.InputMethodManager)a.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(cityInput.getWindowToken(),0);

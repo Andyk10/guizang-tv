@@ -1,14 +1,21 @@
 plugins { id 'com.android.application' }
 
+def legacyMitv3 = providers.gradleProperty('mitv3').map { it.toBoolean() }.getOrElse(false)
+
 android {
     namespace 'io.github.op7418.guizangtv'
     compileSdk 34
+    buildFeatures { buildConfig true }
     defaultConfig {
-        applicationId 'io.github.op7418.guizangtv'
-        minSdk 26
+        applicationId legacyMitv3 ? 'io.github.op7418.guizangtv.mitv3' : 'io.github.op7418.guizangtv'
+        minSdk legacyMitv3 ? 22 : 26
         targetSdk 34
-        versionCode 6
-        versionName '0.4.0-dev'
+        versionCode legacyMitv3 ? 8 : 6
+        versionName legacyMitv3 ? '0.4.0-dev-mitv3.2' : '0.4.0-dev'
+        buildConfigField 'boolean', 'LEGACY_MITV3', legacyMitv3.toString()
+        manifestPlaceholders = [appLabel: legacyMitv3 ? '归藏电视 · MiTV3' : '归藏电视',
+                                bootGateEnabled: (!legacyMitv3).toString(),
+                                legacyHomeEnabled: legacyMitv3.toString()]
     }
     signingConfigs {
         release {
@@ -29,8 +36,12 @@ android {
         }
     }
     compileOptions {
+        coreLibraryDesugaringEnabled true
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
 }
-dependencies { testImplementation 'junit:junit:4.13.2' }
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+    testImplementation 'junit:junit:4.13.2'
+}

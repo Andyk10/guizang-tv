@@ -40,8 +40,9 @@ final class HomeAssistant {
     private String lastDraft="",lastTranscript="";
     private final Runnable poll=()->request("/state",null);
     HomeAssistant(FrameHomeActivity activity){a=activity;prefs=a.getSharedPreferences("codex-companion",0);}
-    static boolean enabled(android.content.Context context){return context.getSharedPreferences("codex-companion",0).getBoolean("enabled",false);}
+    static boolean enabled(android.content.Context context){return !BuildConfig.LEGACY_MITV3&&context.getSharedPreferences("codex-companion",0).getBoolean("enabled",false);}
     boolean enabled(boolean value){
+        if(BuildConfig.LEGACY_MITV3&&value)return false;
         if(!prefs.edit().putBoolean("enabled",value).commit())return false;
         if(!value){main.removeCallbacks(poll);close();}return true;
     }
@@ -109,8 +110,8 @@ final class HomeAssistant {
     }
     private void chat(){
         pairing=false;generation++;main.removeCallbacks(poll);lastDraft="";lastTranscript="";layout();
-        historyScroll=new ScrollView(a);historyScroll.setFillViewport(true);historyScroll.setClipToPadding(false);
-        historyScroll.setOnScrollChangeListener((v,x,y,oldX,oldY)->backdrop.invalidateMaterials());
+        historyScroll=new ScrollView(a){@Override protected void onScrollChanged(int x,int y,int oldX,int oldY){super.onScrollChanged(x,y,oldX,oldY);backdrop.invalidateMaterials();}};
+        historyScroll.setFillViewport(true);historyScroll.setClipToPadding(false);
         historyScroll.setVerticalFadingEdgeEnabled(true);historyScroll.setFadingEdgeLength(a.dp(24));
         historyScroll.setVerticalScrollBarEnabled(false);historyScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         historyScroll.setFocusable(true);historyScroll.setContentDescription("对话记录，上下滚动");

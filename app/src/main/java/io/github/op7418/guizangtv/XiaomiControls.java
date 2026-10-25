@@ -8,27 +8,29 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.provider.Settings;
 
-/** Local profile verified on MiTV-MTSU0, OS3.0.119.0.UTSMATV. */
+/** Firmware-scoped native entry points; never disables the stock TV components. */
 final class XiaomiControls {
     private XiaomiControls() { }
 
     static boolean enabled() {
-        return "MiTV-MTSU0".equals(Build.MODEL);
+        return TvDeviceProfile.sources(BuildConfig.LEGACY_MITV3, Build.MODEL, Build.DEVICE,
+                Build.DISPLAY, Build.VERSION.SDK_INT);
     }
 
-    /** Observed on this firmware: source 23 = HDMI 1, source 24 = HDMI 2. */
+    /** Component export and caller permission are checked again on the actual device. */
     static boolean openHdmi(Context context, int port) {
-        if (!enabled() || port < 1 || port > 2) return false;
+        int input = TvDeviceProfile.hdmiInput(port);
+        if (!enabled() || input < 0) return false;
         ComponentName target = new ComponentName("com.xiaomi.mitv.tvplayer",
                 "com.xiaomi.mitv.tvplayer.ExternalSourceActivity");
         try {
             ActivityInfo info = context.getPackageManager().getActivityInfo(target, 0);
             if (!info.enabled || !info.exported) return false;
             if (info.permission != null
-                    && context.checkSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED)
+                    && context.checkCallingOrSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED)
                 return false;
             context.startActivity(new Intent("com.xiaomi.mitv.tvplayer.EXTSRC_PLAY")
-                    .setComponent(target).putExtra("input", 22 + port)
+                    .setComponent(target).putExtra("input", input)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             return true;
         } catch (PackageManager.NameNotFoundException | RuntimeException unavailable) {
@@ -60,7 +62,7 @@ final class XiaomiControls {
             ActivityInfo info = context.getPackageManager().getReceiverInfo(receiver, 0);
             if (!info.exported || !info.enabled) return false;
             if (info.permission != null
-                    && context.checkSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED)
+                    && context.checkCallingOrSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED)
                 return false;
             context.sendBroadcast(new Intent("com.xiaomi.mitv.settings.INPUTSOURCE_POPUP")
                     .setComponent(receiver));
@@ -90,7 +92,7 @@ final class XiaomiControls {
             ActivityInfo info = context.getPackageManager().getActivityInfo(alias, 0);
             if (!info.enabled || !info.exported) return false;
             if (info.permission != null
-                    && context.checkSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED)
+                    && context.checkCallingOrSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED)
                 return false;
             context.startActivity(new Intent(Intent.ACTION_MAIN).setComponent(alias)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
