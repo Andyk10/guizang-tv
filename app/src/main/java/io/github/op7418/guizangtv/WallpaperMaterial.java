@@ -12,14 +12,23 @@ import java.util.function.Consumer;
 final class WallpaperMaterial {
     private static final ExecutorService WORKER=Executors.newSingleThreadExecutor();
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
-    private static final LruCache<String,Bitmap> CACHE=new LruCache<>(12);
-    static void request(Drawable source,int blur,Consumer<Bitmap> ready) {
-        if(!(source instanceof BitmapDrawable)){ready.accept(null);return;}
+    private static final LruCache<String,Bitmap> CACHE=new LruCache<String,Bitmap>(HomeMemoryPolicy.MATERIAL_BYTES){
+        @Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getAllocationByteCount();}
+    };
+    private static final java.util.concurrent.atomic.AtomicInteger PENDING=new java.util.concurrent.atomic.AtomicInteger();
+    private static final java.util.concurrent.atomic.AtomicInteger GENERATION=new java.util.concurrent.atomic.AtomicInteger();
+    static ImageRequest request(Drawable source,int blur,Consumer<Bitmap> ready) {
+        PENDING.incrementAndGet();
+        ImageRequest ticket=new ImageRequest(MAIN::post,MAIN::removeCallbacks,()->PENDING.decrementAndGet());
+        if(!(source instanceof BitmapDrawable)){ticket.deliver(()->ready.accept(null));return ticket;}
         Bitmap original=((BitmapDrawable)source).getBitmap();
         String key=original.getGenerationId()+":"+blur;
-        Bitmap cached=CACHE.get(key);if(cached!=null){ready.accept(cached);return;}
-        WORKER.execute(()->{
+        Bitmap cached=CACHE.get(key);if(cached!=null){ticket.deliver(()->ready.accept(cached));return ticket;}
+        int generation=GENERATION.get();
+        ticket.work(WORKER.submit(()->{
+            if(ticket.cancelled())return;
             Bitmap result=CACHE.get(key);
+            try{
             if(result==null){
                 int w=384,h=216;
                 Bitmap small=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
@@ -29,11 +38,16 @@ final class WallpaperMaterial {
                 canvas.drawBitmap(original,null,new RectF((w-bw)/2,(h-bh)/2,(w+bw)/2,(h+bh)/2),paint);
                 int[] pixels=new int[w*h];small.getPixels(pixels,0,w,0,0,w,h);
                 int[] blurred=GaussianBlur.apply(pixels,w,h,blur/5f);
-                small.setPixels(blurred,0,w,0,0,w,h);result=small;CACHE.put(key,result);
+                small.setPixels(blurred,0,w,0,0,w,h);result=small;
+                synchronized(CACHE){if(!ticket.cancelled()&&generation==GENERATION.get())CACHE.put(key,result);}
             }
-            Bitmap material=result;MAIN.post(()->ready.accept(material));
-        });
+            }catch(RuntimeException|OutOfMemoryError unavailable){result=null;}
+            Bitmap material=result;ticket.deliver(()->ready.accept(material));
+        }));
+        return ticket;
     }
+    static void trim(){synchronized(CACHE){GENERATION.incrementAndGet();CACHE.evictAll();}}
+    static void dump(java.io.PrintWriter out){out.println("WallpaperMaterialMemory: bytes="+CACHE.size()+" limit="+CACHE.maxSize()+" entries="+CACHE.snapshot().size()+" pending="+PENDING.get());}
     static GradientDrawable rounded(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(radius);return d;}
 
     /** Draw in stage coordinates so the glass reveals the photo directly behind its bounds. */

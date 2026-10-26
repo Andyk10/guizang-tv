@@ -30,6 +30,7 @@ final class HomeSettings {
     private ImageView backdrop;
     private View content;
     private int backdropRequest;
+    private ImageRequest backdropTask;
     private int cityRequest;
     private boolean searching;
     private EditText cityInput;
@@ -45,7 +46,7 @@ final class HomeSettings {
         page="overview";undo.clear();
         dialog=new Dialog(a){@Override public void onBackPressed(){back();}};
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setOnDismissListener(d->{a.wallpapers.cancelPreview();a.wallpapers.cancelSelection();undo.clear();a.updateRotation();a.surface.controls.get(2).requestFocus();});
+        dialog.setOnDismissListener(d->{if(d==dialog)finishClose();});
         dialog.show();dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         dialog.getWindow().setLayout(-1,-1);
         dialog.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
@@ -54,7 +55,26 @@ final class HomeSettings {
         View shade=new View(a);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xC2080C0F,0x7D080C0F}));stage.addView(shade,new FrameLayout.LayoutParams(-1,-1));
         dialog.setContentView(stage);render();a.updateRotation();
     }
-    void close(){cityRequest++;searching=false;if(dialog!=null)dialog.dismiss();}
+    void close(){
+        Dialog old=dialog;if(old==null)return;
+        old.setOnDismissListener(null);finishClose();old.dismiss();
+    }
+    private void finishClose(){
+        cityRequest++;searching=false;a.wallpapers.cancelSelection();undo.clear();
+        dialog=null;releasePage();if(backdrop!=null)backdrop.setImageDrawable(null);
+        if(stage!=null)stage.removeAllViews();stage=null;backdrop=null;
+        cityResults.clear();a.updateRotation();a.surface.controls.get(2).requestFocus();
+    }
+    private void releasePage(){
+        a.wallpapers.cancelPreview();backdropRequest++;
+        if(backdropTask!=null)backdropTask.cancel();backdropTask=null;
+        if(preview!=null)preview.dispose();
+        if(previewHost!=null)previewHost.removeAllViews();
+        if(stage!=null&&content!=null)stage.removeView(content);
+        preview=null;previewHost=null;content=null;options=null;status=null;cityInput=null;choices.clear();
+    }
+    void trimClosed(){if(!showing()){releasePage();if(backdrop!=null)backdrop.setImageDrawable(null);}}
+    void dump(java.io.PrintWriter out){out.println("HomeSettingsMemory: open="+showing()+" retainedPage="+(stage!=null||content!=null||preview!=null)+" choices="+choices.size()+" pendingBackdrop="+(backdropTask!=null&&backdropTask.pending()));}
     private void back(){
         a.wallpapers.cancelPreview();a.wallpapers.cancelSelection();
         if(page.equals("overview")){close();return;}
@@ -68,7 +88,7 @@ final class HomeSettings {
             default:return "首页内容 / "+a.items.name(page.substring(5));}
     }
     private void render(){
-        rendering=true;choices.clear();
+        rendering=true;releasePage();
         boolean overview=page.equals("overview");
         LinearLayout panel=new LinearLayout(a);panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(a.dp(70),a.dp(overview?42:24),a.dp(70),a.dp(30));
@@ -195,7 +215,7 @@ final class HomeSettings {
                 else note("至少保留一个首页入口。");break;
         }
         if(content!=null)stage.removeView(content);content=panel;stage.addView(panel,new FrameLayout.LayoutParams(-1,-1));
-        refreshPreview();background(a.wallpaperDrawable());rendering=false;weatherChanged();
+        if(!overview)refreshPreview();background(a.wallpaperDrawable());rendering=false;weatherChanged();
         if(!choices.isEmpty())choices.get(Math.min(remembered.getOrDefault(page,0),choices.size()-1)).requestFocus();
     }
     private void experiment(boolean enabled){
@@ -284,7 +304,8 @@ final class HomeSettings {
     private TextView label(String s,int size){TextView v=new TextView(a);v.setText(s);v.setTextSize(size);v.setTextColor(0xF2FFFFFF);v.setTypeface(android.os.Build.VERSION.SDK_INT>=28?Typeface.create(Typeface.create("sans-serif",Typeface.NORMAL),300,false):Typeface.create("sans-serif-light",Typeface.NORMAL));v.setIncludeFontPadding(false);return v;}
     private void background(Drawable source){
         int request=++backdropRequest;
-        WallpaperMaterial.request(source,42,image->{if(request==backdropRequest&&showing()&&image!=null)backdrop.setImageBitmap(image);});
+        if(backdropTask!=null)backdropTask.cancel();
+        backdropTask=WallpaperMaterial.request(source,42,image->{if(request==backdropRequest&&showing()&&backdrop!=null&&image!=null)backdrop.setImageBitmap(image);});
     }
     private Drawable roundedThumb(Drawable source){
         android.graphics.Bitmap image=android.graphics.Bitmap.createBitmap(a.dp(48),a.dp(27),android.graphics.Bitmap.Config.ARGB_8888);

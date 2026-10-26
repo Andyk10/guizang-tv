@@ -10,8 +10,8 @@ android {
         applicationId legacyMitv3 ? 'io.github.op7418.guizangtv.mitv3' : 'io.github.op7418.guizangtv'
         minSdk legacyMitv3 ? 22 : 26
         targetSdk 34
-        versionCode legacyMitv3 ? 9 : 6
-        versionName legacyMitv3 ? '0.4.0-dev-mitv3.3' : '0.4.0-dev'
+        versionCode legacyMitv3 ? 10 : 6
+        versionName legacyMitv3 ? '0.4.0-dev-mitv3.4' : '0.4.0-dev'
         buildConfigField 'boolean', 'LEGACY_MITV3', legacyMitv3.toString()
         manifestPlaceholders = [appLabel: legacyMitv3 ? '归藏电视 · MiTV3' : '归藏电视',
                                 bootGateEnabled: (!legacyMitv3).toString(),

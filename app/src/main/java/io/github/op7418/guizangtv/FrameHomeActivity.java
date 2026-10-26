@@ -24,6 +24,8 @@ public final class FrameHomeActivity extends Activity implements HomeSurface.Act
     private ImageView photo, transition;
     private AlertDialog library;
     private boolean resumed;
+    private boolean started;
+    private int memoryTrims;
     private int selected;
     private final Runnable tick = new Runnable(){public void run(){
         String time=new SimpleDateFormat("HH:mm",Locale.CHINA).format(new Date());
@@ -43,13 +45,13 @@ public final class FrameHomeActivity extends Activity implements HomeSurface.Act
         weather=new HomeWeather(this,this::weatherChanged);
         settings=new HomeSettings(this);
         assistant=new HomeAssistant(this);
-        wallpapers.changed=()->{if(surface!=null)surface.wallpaper(wallpaperDrawable());};
+        wallpapers.changed=()->{if(surface!=null){if(started)surface.wallpaper(wallpaperDrawable());else surface.releaseMaterial();}};
         setContentView(root);refreshHome();surface.focusApp();
     }
     void refreshHome(){
         int restore=Math.max(0,Math.min(items.order.size()-1,selected));
         selected=restore;
-        if(surface!=null)root.removeView(surface);
+        if(surface!=null){surface.dispose();root.removeView(surface);}
         root.setBackgroundColor(appearance.light()?0xFFF0EFE9:0xFF11151B);
         photo.setVisibility(appearance.get("background")==0?View.VISIBLE:View.INVISIBLE);
         transition.setVisibility(photo.getVisibility());
@@ -93,7 +95,15 @@ public final class FrameHomeActivity extends Activity implements HomeSurface.Act
         library=new AlertDialog.Builder(this).setTitle("全部应用").setItems(labels,(d,i)->open(ids.get(i))).setNegativeButton("返回",null).create();
         library.setOnDismissListener(d->{surface.controls.get(0).requestFocus();updateRotation();});library.show();updateRotation();
     }
-    @Override protected void onResume(){super.onResume();resumed=true;assistant.active(true);BootStart.confirm(this);LegacyHome.sync(this);handler.removeCallbacks(tick);tick.run();updateRotation();}
+    @Override protected void onStart(){super.onStart();started=true;}
+    @Override protected void onStop(){started=false;super.onStop();}
+    @Override protected void onResume(){super.onResume();resumed=true;surface.restoreMaterial(wallpaperDrawable());assistant.active(true);BootStart.confirm(this);LegacyHome.sync(this);handler.removeCallbacks(tick);tick.run();updateRotation();}
+    @Override public void onTrimMemory(int level){super.onTrimMemory(level);trimMemory(level);}
+    @Override public void onLowMemory(){super.onLowMemory();trimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL);}
+    private void trimMemory(int level){
+        if(!HomeMemoryPolicy.release(level,started))return;
+        memoryTrims++;settings.trimClosed();wallpapers.cancelPreview();surface.releaseMaterial();WallpaperMaterial.trim();
+    }
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused&&resumed)LegacyHome.confirm(this);}
     @Override protected void onNewIntent(Intent i){
         super.onNewIntent(i);setIntent(i);
@@ -103,10 +113,11 @@ public final class FrameHomeActivity extends Activity implements HomeSurface.Act
         }
     }
     @Override protected void onPause(){resumed=false;assistant.active(false);weather.active(false);handler.removeCallbacks(tick);wallpapers.pause();if(library!=null)library.dismiss();super.onPause();}
-    @Override protected void onDestroy(){assistant.destroy();settings.close();weather.destroy();wallpapers.destroy();handler.removeCallbacksAndMessages(null);super.onDestroy();}
+    @Override protected void onDestroy(){assistant.destroy();settings.close();surface.dispose();weather.destroy();wallpapers.destroy();handler.removeCallbacksAndMessages(null);super.onDestroy();}
     @Override public void onBackPressed(){if(surface.controls.contains(getCurrentFocus()))surface.focusApp();else if(XiaomiControls.enabled())stockHome();else super.onBackPressed();}
     @Override public void dump(String prefix,java.io.FileDescriptor fd,java.io.PrintWriter out,String[] args){
         super.dump(prefix,fd,out,args);wallpapers.dump(out);BootStart.dump(this,out);weather.dump(out);
+        settings.dump(out);WallpaperMaterial.dump(out);out.println("HomeMemory: visible="+started+" trims="+memoryTrims);
         out.println("HomeAppearance: "+appearance.prefs.getAll()+" items="+items.order+" settings="+settings.page());
         out.println("HomeNavigation: "+HomeNavigation.status(this));
         if(LegacyHome.supported())out.println("LegacyHome: home="+LegacyHome.home(this)+" boot="+LegacyHome.boot(this)+" native="+LegacyHome.nativeConfigured(this)+" source="+LegacyHome.prefs(this).getString("boot_source","none")+" status="+LegacyHome.status(this));

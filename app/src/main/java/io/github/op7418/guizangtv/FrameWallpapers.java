@@ -45,6 +45,7 @@ final class FrameWallpapers {
     private final List<Entry> entries = new ArrayList<>();
     private boolean rotating, active, loading, destroyed, hasImage;
     private int current, minutes, generation;
+    private ImageRequest previewTask, selectionTask;
     Runnable changed=()->{};
     private final Runnable rotate = () -> load(WallpaperCycle.next(current, entries.size()));
 
@@ -87,13 +88,13 @@ final class FrameWallpapers {
         }
     }
 
-    private Bitmap decode(String file, boolean thumbnail) throws Exception {
+    private Bitmap decode(String file, int maxWidth, int maxHeight) throws Exception {
         if (file.startsWith("builtin:")) {
             int[][] palettes = {{0xFF172B3B, 0xFFB78060}, {0xFF152C28, 0xFF6D8B68},
                     {0xFF3C302B, 0xFFC6A376}, {0xFF0B2238, 0xFF397E92}, {0xFF24203A, 0xFF866B8D}};
             int index = Integer.parseInt(file.substring(8));
-            Bitmap image = Bitmap.createBitmap(thumbnail ? 320 : 1920, thumbnail ? 180 : 1080,
-                    Bitmap.Config.ARGB_8888);
+            int[] size = ImageSizing.fit(1920, 1080, maxWidth, maxHeight);
+            Bitmap image = Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888);
             android.graphics.Canvas canvas = new android.graphics.Canvas(image);
             android.graphics.Paint paint = new android.graphics.Paint();
             paint.setShader(new android.graphics.LinearGradient(0, image.getHeight(), image.getWidth(), 0,
@@ -101,11 +102,34 @@ final class FrameWallpapers {
             canvas.drawRect(0, 0, image.getWidth(), image.getHeight(), paint);
             return image;
         }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
         try (InputStream stream = activity.getAssets().open("wallpapers/" + file)) {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-            Bitmap image = BitmapFactory.decodeStream(stream, null, options);
+            BitmapFactory.decodeStream(stream, null, options);
+        }
+        int[] size = ImageSizing.crop(options.outWidth, options.outHeight, maxWidth, maxHeight);
+        int[] region = ImageSizing.cropRegion(options.outWidth, options.outHeight, size[0], size[1]);
+        options.inSampleSize = ImageSizing.cropSample(region[2]-region[0], region[3]-region[1], size[0], size[1]);
+        options.inJustDecodeBounds = false;
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        try (InputStream stream = activity.getAssets().open("wallpapers/" + file)) {
+            // Decode only the visible CENTER_CROP area, avoiding a full-size intermediate bitmap.
+            android.graphics.BitmapRegionDecoder decoder = android.graphics.BitmapRegionDecoder.newInstance(stream, false);
+            Bitmap image;
+            try { image = decoder.decodeRegion(new android.graphics.Rect(region[0],region[1],region[2],region[3]), options); }
+            finally { decoder.recycle(); }
             if (image == null) throw new java.io.IOException("Image unavailable");
+            if (size[0] != image.getWidth() || size[1] != image.getHeight()) {
+                Bitmap scaled = Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888);
+                float scale = Math.max(size[0] / (float) image.getWidth(), size[1] / (float) image.getHeight());
+                float w = image.getWidth() * scale, h = image.getHeight() * scale;
+                new android.graphics.Canvas(scaled).drawBitmap(image, null,
+                        new android.graphics.RectF((size[0]-w)/2, (size[1]-h)/2, (size[0]+w)/2, (size[1]+h)/2),
+                        new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+                // Only this decoder owns the intermediate; displayed/shared images are never recycled.
+                if (scaled != image) image.recycle();
+                image = scaled;
+            }
             return image;
         }
     }
@@ -114,14 +138,20 @@ final class FrameWallpapers {
     private void load(int index, Runnable success) {
         if (destroyed || entries.isEmpty()) return;
         handler.removeCallbacks(rotate);
+        if (selectionTask != null) selectionTask.cancel();
+        ImageRequest ticket = new ImageRequest(handler::post, handler::removeCallbacks);
+        selectionTask = ticket;
         final int request = ++generation;
+        android.util.DisplayMetrics display = activity.getResources().getDisplayMetrics();
+        final int width = Math.max(1, display.widthPixels), height = Math.max(1, display.heightPixels);
         loading = true;
-        worker.execute(() -> {
+        ticket.work(worker.submit(() -> {
+            if (ticket.cancelled()) return;
             Bitmap bitmap = null;
-            try { bitmap = decode(entries.get(index).file, false); }
-            catch (Exception error) { android.util.Log.e("TvHome.Wallpaper", "Decode failed", error); }
+            try { bitmap = decode(entries.get(index).file, width, height); }
+            catch (Exception | OutOfMemoryError error) { android.util.Log.e("TvHome.Wallpaper", "Decode failed", error); }
             final Bitmap image = bitmap;
-            handler.post(() -> {
+            ticket.deliver(() -> {
                 if (destroyed || request != generation) {
                     if (image != null) image.recycle();
                     return;
@@ -160,7 +190,7 @@ final class FrameWallpapers {
                         + " rotating=" + rotating + " minutes=" + minutes);
                 schedule();
             });
-        });
+        }));
     }
 
     private void schedule() {
@@ -177,7 +207,8 @@ final class FrameWallpapers {
     void destroy() {
         destroyed = true;
         generation++;
-        previewGeneration++;
+        cancelPreview();
+        if (selectionTask != null) selectionTask.cancel();
         pause();
         transition.animate().cancel();
         worker.shutdownNow();
@@ -185,8 +216,8 @@ final class FrameWallpapers {
     }
 
     android.graphics.drawable.Drawable thumbnail(int index) {
-        try { return new android.graphics.drawable.BitmapDrawable(activity.getResources(), decode(entries.get(index).thumb,true)); }
-        catch (Exception unavailable) { return null; }
+        try { return new android.graphics.drawable.BitmapDrawable(activity.getResources(), decode(entries.get(index).thumb,320,180)); }
+        catch (Exception | OutOfMemoryError unavailable) { return null; }
     }
     int count() { return entries.size(); }
     int selected() { return current; }
@@ -200,27 +231,39 @@ final class FrameWallpapers {
         rotating = enabled; minutes = next; schedule(); return true;
     }
     private int previewGeneration;
-    void cancelPreview() { previewGeneration++; }
-    void cancelSelection() { generation++; loading=false; schedule(); }
+    void cancelPreview() { previewGeneration++; if(previewTask!=null)previewTask.cancel();previewTask=null; }
+    void cancelSelection() { generation++;if(selectionTask!=null)selectionTask.cancel();selectionTask=null;loading=false;schedule(); }
     void preview(int index, ImageView target, Runnable ready) {
+        if(destroyed)return;
+        cancelPreview();
         final int request=++previewGeneration;
-        worker.execute(() -> {
+        ImageRequest ticket=new ImageRequest(handler::post,handler::removeCallbacks);
+        previewTask=ticket;
+        ticket.work(worker.submit(() -> {
+            if(ticket.cancelled())return;
             Bitmap value=null;
-            try { value=decode(entries.get(index).file,false); }
-            catch(Exception error) { android.util.Log.w("TvHome.Wallpaper","Preview unavailable",error); }
+            try { value=decode(entries.get(index).file,ImageSizing.PREVIEW_WIDTH,ImageSizing.PREVIEW_HEIGHT); }
+            catch(Exception | OutOfMemoryError error) { android.util.Log.w("TvHome.Wallpaper","Preview unavailable",error); }
             final Bitmap image=value;
-            handler.post(() -> {
+            ticket.deliver(() -> {
                 if(destroyed || request!=previewGeneration){if(image!=null)image.recycle();return;}
                 if(image!=null){target.setImageBitmap(image);ready.run();}
                 else Toast.makeText(activity,"预览加载失败，可重试或返回",Toast.LENGTH_SHORT).show();
             });
-        });
+        }));
     }
 
     void dump(PrintWriter out) {
         out.println("FrameWallpaper: count=" + entries.size() + " index=" + current
                 + " rotating=" + rotating + " minutes=" + minutes + " active=" + active
                 + " loading=" + loading + " name=" + (entries.isEmpty() ? "" : entries.get(current).name));
+        android.graphics.drawable.Drawable drawable=photo.getDrawable();
+        Bitmap image=drawable instanceof android.graphics.drawable.BitmapDrawable
+                ? ((android.graphics.drawable.BitmapDrawable)drawable).getBitmap():null;
+        out.println("WallpaperImageMemory: main="+(image==null?"none":image.getWidth()+"x"+image.getHeight())
+                +" bytes="+(image==null?0:image.getAllocationByteCount())
+                +" previewPending="+(previewTask!=null&&previewTask.pending())
+                +" selectionPending="+(selectionTask!=null&&selectionTask.pending()));
     }
 
     private int dp(int value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }

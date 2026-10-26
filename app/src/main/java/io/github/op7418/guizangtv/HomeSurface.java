@@ -22,6 +22,8 @@ final class HomeSurface extends FrameLayout {
     private int selected;
     private android.graphics.Bitmap material;
     private int materialRequest;
+    private ImageRequest materialTask;
+    private boolean materialReleased;
     private DockShelf dockShelf;
     HomeSurface(Context c, HomeAppearance style, HomeItems items, Drawable wallpaper, int selected,
                 boolean preview, Actions actions) {
@@ -135,14 +137,25 @@ final class HomeSurface extends FrameLayout {
     }
     void wallpaper(Drawable drawable){
         int request=++materialRequest;
+        if(materialTask!=null)materialTask.cancel();
+        materialReleased=false;
         if((style.get("focus")!=1&&dockShelf==null)||style.get("background")!=0)return;
-        WallpaperMaterial.request(drawable,new int[]{14,42,2}[style.get("material")],field->{
+        materialTask=WallpaperMaterial.request(drawable,new int[]{14,42,2}[style.get("material")],field->{
             if(request!=materialRequest)return;material=field;paintShelf();
             for(View v:apps)if(dockShelf==null&&(v.isFocused()||(preview&&apps.indexOf(v)==selected)))
                 v.setBackground(new WallpaperMaterial.Glass(this,v,material,dp(12),new int[]{0x60101418,0x48101418,0x30101418}[style.get("material")]));
             for(View v:controls)if(v.isFocused())v.setBackground(new WallpaperMaterial.Glass(this,v,material,dp(12),0x50101418));
         });
     }
+    void releaseMaterial(){
+        materialRequest++;if(materialTask!=null)materialTask.cancel();materialTask=null;
+        material=null;materialReleased=true;
+        for(View v:apps)if(v.getBackground() instanceof WallpaperMaterial.Glass)v.setBackgroundColor(Color.TRANSPARENT);
+        for(View v:controls)if(v.getBackground() instanceof WallpaperMaterial.Glass)v.setBackgroundColor(Color.TRANSPARENT);
+        if(dockShelf!=null)dockShelf.setBackgroundColor(Color.TRANSPARENT);
+    }
+    void restoreMaterial(Drawable wallpaper){if(materialReleased)wallpaper(wallpaper);}
+    void dispose(){releaseMaterial();previewPhoto.setImageDrawable(null);}
     private void paintShelf(){
         if(dockShelf==null)return;
         if(style.get("background")==0)
