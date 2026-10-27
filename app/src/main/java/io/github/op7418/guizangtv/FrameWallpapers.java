@@ -30,6 +30,8 @@ import java.util.concurrent.Executors;
 
 /** Bundled wallpapers: bounded decoding, saved choice, foreground-only rotation. */
 final class FrameWallpapers {
+    /** Keep in sync with MAX_WALLPAPERS in scripts/prepare_wallpapers.py. */
+    static final int MAX_WALLPAPERS = 30;
     private static final class Entry {
         final String id, name, file, thumb;
         Entry(JSONObject json) throws org.json.JSONException {
@@ -60,7 +62,7 @@ final class FrameWallpapers {
             int n;
             while ((n = stream.read(buffer)) != -1) bytes.write(buffer, 0, n);
             JSONArray json = new JSONArray(bytes.toString("UTF-8"));
-            if (json.length() > 15) throw new IllegalArgumentException("At most 15 wallpapers");
+            if (json.length() > MAX_WALLPAPERS) throw new IllegalArgumentException("At most " + MAX_WALLPAPERS + " wallpapers");
             for (int i = 0; i < json.length(); i++) entries.add(new Entry(json.getJSONObject(i)));
         } catch (Exception error) {
             android.util.Log.e("TvHome.Wallpaper", "Catalog unavailable", error);

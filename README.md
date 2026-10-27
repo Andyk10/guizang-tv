@@ -100,7 +100,7 @@ gradle :app:assembleRelease :app:testReleaseUnitTest :app:lintRelease
 
 目前支持**构建时打包**，电视端可以从已打包的图片中选择；尚未提供电视端文件导入功能。
 
-准备 1–15 张 JPEG / PNG / WebP 图片，然后：
+准备 1–30 张 JPEG / PNG / WebP 图片，然后：
 
 ```sh
 python3 -m venv .venv
